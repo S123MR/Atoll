@@ -329,8 +329,22 @@ class LockScreenPanelManager {
         let baseCenterY = screenFrame.midY
         let largestHalfHeight = max(artworkSide, panelSize.height) / 2
         let minCenterY = screenFrame.minY + largestHalfHeight + 56
-        let maxCenterY = screenFrame.maxY - largestHalfHeight - 84
-        let centerY = min(max(baseCenterY, minCenterY), maxCenterY)
+        var maxCenterY = screenFrame.maxY - largestHalfHeight - 84
+
+        let widgetClearance: CGFloat = 20
+        if let weatherFrame = LockScreenWeatherPanelManager.shared.latestFrame,
+           !weatherFrame.isEmpty {
+            let weatherTopConstrainedCenterY = weatherFrame.minY - widgetClearance - largestHalfHeight
+            maxCenterY = min(maxCenterY, weatherTopConstrainedCenterY)
+        }
+        if let timerFrame = LockScreenTimerWidgetPanelManager.shared.latestFrame,
+           !timerFrame.isEmpty {
+            let timerTopConstrainedCenterY = timerFrame.minY - widgetClearance - largestHalfHeight
+            maxCenterY = min(maxCenterY, timerTopConstrainedCenterY)
+        }
+
+        let resolvedMaxCenterY = max(maxCenterY, minCenterY)
+        let centerY = min(max(baseCenterY, minCenterY), resolvedMaxCenterY)
 
         return NSRect(
             x: groupOriginX + artworkSide + spacing,
