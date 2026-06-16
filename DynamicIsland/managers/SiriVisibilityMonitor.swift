@@ -18,6 +18,7 @@
 
 import Cocoa
 import Combine
+import Defaults
 
 @MainActor
 final class SiriVisibilityMonitor: ObservableObject {
@@ -27,17 +28,29 @@ final class SiriVisibilityMonitor: ObservableObject {
     
     private var isScreenLocked = false
     private var isDisplayOn = true
+    private var isPluggedIn = false
+    private var isInLowPowerMode = false
     private var cancellables = Set<AnyCancellable>()
     
     private var monitoringTimer: Timer?
     private var disappearanceConfirmations = 0
     private let disappearanceThreshold = 2 
 
+    // Polling intervals calculated dynamically
+    private var currentIdleInterval: TimeInterval {
+        calculateIntervals().idle
+    }
+    
+    private var currentActiveInterval: TimeInterval {
+        calculateIntervals().active
+    }
+
     private init() {
         setupStateObservers()
     }
 
     private func setupStateObservers() {
+        // Observe lock state
         LockScreenManager.shared.$isLocked
             .receive(on: RunLoop.main)
             .sink { [weak self] locked in
@@ -46,6 +59,7 @@ final class SiriVisibilityMonitor: ObservableObject {
             }
             .store(in: &cancellables)
 
+        // Observe display sleep/wake
         let wsCenter = NSWorkspace.shared.notificationCenter
         wsCenter.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
             self?.isDisplayOn = false
@@ -55,10 +69,68 @@ final class SiriVisibilityMonitor: ObservableObject {
             self?.isDisplayOn = true
             self?.updateMonitoringState()
         }
+
+        // Observe low power mode
+        NotificationCenter.default.addObserver(forName: NSNotification.Name.NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.isInLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+            self?.updateMonitoringState()
+        }
+        self.isInLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+
+        // Observe plug-in state via BatteryActivityManager
+        BatteryActivityManager.shared.onPowerSourceChange = { [weak self] pluggedIn in
+            Task { @MainActor in
+                self?.isPluggedIn = pluggedIn
+                self?.updateMonitoringState()
+            }
+        }
+        
+        // Observe user preference changes to responsiveness mode
+        Defaults.publisher(.siriResponsivenessMode)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] _ in
+                self?.updateMonitoringState()
+            }
+            .store(in: &cancellables)
+    }
+
+    private func calculateIntervals() -> (idle: TimeInterval, active: TimeInterval) {
+        let mode = Defaults[.siriResponsivenessMode]
+        
+        let effectiveMode: SiriResponsivenessMode
+        if mode == .automatic {
+            if isInLowPowerMode {
+                effectiveMode = .powerSaver
+            } else if isPluggedIn {
+                effectiveMode = .highPerformance
+            } else {
+                effectiveMode = .balanced
+            }
+        } else {
+            effectiveMode = mode
+        }
+
+        let intervals: (idle: TimeInterval, active: TimeInterval)
+        switch effectiveMode {
+        case .highPerformance:
+            // Old: idle: 0.20s, active: 0.03s -> Upgraded to 0.10s / 0.03s for ultimate performance
+            intervals = (idle: 0.10, active: 0.03)
+        case .balanced, .automatic:
+            // Old: idle: 0.50s, active: 0.06s -> Upgraded to 0.15s / 0.05s for smooth battery-conscious responsiveness
+            intervals = (idle: 0.15, active: 0.05)
+        case .powerSaver:
+            // Old: idle: 2.00s, active: 0.25s -> Upgraded to 1.00s / 0.12s for maximized power saving without extreme lag
+            intervals = (idle: 1.00, active: 0.12)
+        }
+        
+        print("⏱️ [SiriVisibilityMonitor] Mode: \(effectiveMode) (User Pref: \(mode)) -> Intervals: Idle \(intervals.idle)s, Active \(intervals.active)s")
+        return intervals
     }
 
     private func updateMonitoringState() {
         let shouldMonitor = isScreenLocked && isDisplayOn
+        
+        print("🔌 [SiriVisibilityMonitor] State Update - Locked: \(isScreenLocked), Display: \(isDisplayOn), Plugged: \(isPluggedIn), LPM: \(isInLowPowerMode)")
         
         if shouldMonitor {
             startMonitoring()
@@ -68,10 +140,7 @@ final class SiriVisibilityMonitor: ObservableObject {
     }
 
     private func startMonitoring() {
-        // High-performance intervals:
-        // Idle is set to 0.12 seconds (~8Hz) for instant, lag-free appearance detection.
-        // Active is set to 0.05 seconds (20Hz) for highly responsive tracking during dismissal.
-        let desiredInterval: TimeInterval = isSiriVisible ? 0.05 : 0.12
+        let desiredInterval = isSiriVisible ? currentActiveInterval : currentIdleInterval
         
         if let currentTimer = monitoringTimer, currentTimer.isValid {
             if currentTimer.timeInterval == desiredInterval {
