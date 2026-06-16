@@ -4911,7 +4911,6 @@ struct LockScreenSettings: View {
     @Default(.enableLockScreenTimerWidget) private var enableLockScreenTimerWidget
     @Default(.enableLockScreenWeatherWidget) private var enableLockScreenWeatherWidget
     @Default(.enableLockScreenFocusWidget) private var enableLockScreenFocusWidget
-    @Default(.siriResponsivenessMode) private var siriResponsivenessMode
     @Default(.lockScreenWeatherWidgetStyle) private var lockScreenWeatherWidgetStyle
     @Default(.lockScreenWeatherProviderSource) private var lockScreenWeatherProviderSource
     @Default(.lockScreenWeatherTemperatureUnit) private var lockScreenWeatherTemperatureUnit
@@ -5036,23 +5035,6 @@ struct LockScreenSettings: View {
                 Text("Controls whether Dynamic Island mirrors lock/unlock events with its own live activity and audible chimes.")
             }
 
-            Section {
-                Picker("Siri detection speed", selection: $siriResponsivenessMode) {
-                    ForEach(SiriResponsivenessMode.allCases) { mode in
-                        VStack(alignment: .leading) {
-                            Text(mode.displayName)
-                            Text(mode.description)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                        }.tag(mode)
-                    }
-                }
-                .settingsHighlight(id: highlightID("Siri detection speed"))
-            } header: {
-                Text("Siri Detection")
-            } footer: {
-                Text("Higher speeds allow widgets to hide almost instantly when Siri is invoked, but may impact battery life when on battery power.")
-            }
 
             Section {
                 Button(previewManager.isPreviewVisible ? "Hide lock screen preview" : "Preview lock screen widgets") {

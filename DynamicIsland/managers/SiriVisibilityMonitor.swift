@@ -18,41 +18,50 @@
 
 import Cocoa
 import Combine
-import Defaults
+import ApplicationServices  // AXObserver, AXUIElement
+
+// MARK: - C callback (file scope; cannot be a member or capture state)
+
+private let siriAXCallback: AXObserverCallback = { _, element, notification, refcon in
+    guard let refcon else { return }
+    let monitor = Unmanaged<SiriVisibilityMonitor>
+        .fromOpaque(refcon)
+        .takeUnretainedValue()
+    let name = notification as String
+    
+    // Callbacks fire on the main thread (we added the source to CFRunLoopGetMain),
+    // but Task {@MainActor} makes the intent explicit and satisfies strict concurrency.
+    Task { @MainActor in
+        monitor.handleAXNotification(element, name: name)
+    }
+}
+
+// MARK: - Monitor
 
 @MainActor
 final class SiriVisibilityMonitor: ObservableObject {
+
     static let shared = SiriVisibilityMonitor()
-    
+
     @Published private(set) var isSiriVisible = false
-    
-    private var monitoringTimer: Timer?
-    private var lastSiriState = false
+
+    // AX state
+    private var axObserver: AXObserver?
+    private var siriAppElement: AXUIElement?
+    private var trackedWindowElement: AXUIElement?   // the specific Siri window we're watching
+
+    // Screen / display state (same as before)
     private var isScreenLocked = false
     private var isDisplayOn = true
-    private var isPluggedIn = false
-    private var isInLowPowerMode = false
     private var cancellables = Set<AnyCancellable>()
-    
-    // Hysteresis: Require multiple consecutive "not found" checks before declaring Siri gone
-    private var disappearanceConfirmationCount = 0
-    private let disappearanceThreshold = 3 // ~100ms at high performance
-    
-    // Polling intervals calculated dynamically
-    private var currentIdleInterval: TimeInterval {
-        calculateIntervals().idle
-    }
-    
-    private var currentActiveInterval: TimeInterval {
-        calculateIntervals().active
-    }
-    
+
     private init() {
         setupStateObservers()
     }
-    
+
+    // MARK: - State observers (lock + display, unchanged)
+
     private func setupStateObservers() {
-        // Observe lock state via LockScreenManager
         LockScreenManager.shared.$isLocked
             .receive(on: RunLoop.main)
             .sink { [weak self] locked in
@@ -60,174 +69,201 @@ final class SiriVisibilityMonitor: ObservableObject {
                 self?.updateMonitoringState()
             }
             .store(in: &cancellables)
-            
-        // Observe display sleep/wake
-        let workspaceCenter = NSWorkspace.shared.notificationCenter
-        workspaceCenter.addObserver(forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main) { [weak self] _ in
+
+        let wsCenter = NSWorkspace.shared.notificationCenter
+
+        wsCenter.addObserver(
+            forName: NSWorkspace.screensDidSleepNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             self?.isDisplayOn = false
             self?.updateMonitoringState()
         }
-        workspaceCenter.addObserver(forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main) { [weak self] _ in
+        wsCenter.addObserver(
+            forName: NSWorkspace.screensDidWakeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
             self?.isDisplayOn = true
             self?.updateMonitoringState()
         }
 
-        // Observe power state
-        NotificationCenter.default.addObserver(forName: NSNotification.Name.NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { [weak self] _ in
-            self?.isInLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
-            self?.updateMonitoringState()
-        }
-        self.isInLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
-
-        // Observe plugged in state via BatteryActivityManager
-        BatteryActivityManager.shared.onPowerSourceChange = { [weak self] pluggedIn in
-            Task { @MainActor in
-                self?.isPluggedIn = pluggedIn
-                self?.updateMonitoringState()
-            }
-        }
-        
-        // Observe responsiveness mode preference
-        Defaults.publisher(.siriResponsivenessMode)
+        // If Siri launches after we start (rare but possible), attach then.
+        wsCenter.publisher(for: NSWorkspace.didLaunchApplicationNotification)
             .receive(on: RunLoop.main)
+            .compactMap { $0.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication }
+            .filter { $0.bundleIdentifier == "com.apple.Siri" }
+            .sink { [weak self] app in
+                guard self?.isScreenLocked == true, self?.isDisplayOn == true else { return }
+                self?.attachAXObserver(to: app.processIdentifier)
+            }
+            .store(in: &cancellables)
+
+        // If Siri's process restarts, tear down the stale observer and re-attach.
+        wsCenter.publisher(for: NSWorkspace.didTerminateApplicationNotification)
+            .receive(on: RunLoop.main)
+            .compactMap { $0.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication }
+            .filter { $0.bundleIdentifier == "com.apple.Siri" }
             .sink { [weak self] _ in
-                self?.updateMonitoringState()
+                self?.teardownAXObserver()
+                self?.isSiriVisible = false
             }
             .store(in: &cancellables)
     }
 
-    private func calculateIntervals() -> (idle: TimeInterval, active: TimeInterval) {
-        let mode = Defaults[.siriResponsivenessMode]
-        
-        let effectiveMode: SiriResponsivenessMode
-        if mode == .automatic {
-            if isInLowPowerMode {
-                effectiveMode = .powerSaver
-            } else if isPluggedIn {
-                effectiveMode = .highPerformance
-            } else {
-                effectiveMode = .balanced
-            }
-        } else {
-            effectiveMode = mode
-        }
+    // MARK: - Monitoring lifecycle
 
-        let intervals: (idle: TimeInterval, active: TimeInterval)
-        switch effectiveMode {
-        case .highPerformance:
-            intervals = (idle: 0.2, active: 0.03) // ~33Hz active
-        case .balanced, .automatic:
-            intervals = (idle: 0.5, active: 0.06) // ~16Hz active (Fluid motion)
-        case .powerSaver:
-            intervals = (idle: 2.0, active: 0.25) // 4Hz active, 0.5Hz idle
-        }
-        
-        print("⏱️ [SiriVisibilityMonitor] Mode: \(effectiveMode) (User Pref: \(mode)) -> Intervals: Idle \(intervals.idle)s, Active \(intervals.active)s")
-        return intervals
-    }
-    
     private func updateMonitoringState() {
-        let shouldMonitor = isScreenLocked && isDisplayOn
-        
-        print("🔌 [SiriVisibilityMonitor] State Update - Locked: \(isScreenLocked), Display: \(isDisplayOn), Plugged: \(isPluggedIn), LPM: \(isInLowPowerMode)")
-        
-        if shouldMonitor {
+        if isScreenLocked && isDisplayOn {
             startMonitoring()
         } else {
             stopMonitoring()
-            // Reset state when monitoring stops
-            if isSiriVisible {
-                isSiriVisible = false
-                lastSiriState = false
-            }
+            if isSiriVisible { isSiriVisible = false }
         }
     }
-    
+
     private func startMonitoring() {
-        // If already monitoring with correct interval, do nothing
-        let currentInterval = isSiriVisible ? currentActiveInterval : currentIdleInterval
-        
-        // Restart timer if interval changed or if it was nil
-        if monitoringTimer?.timeInterval != currentInterval {
-            monitoringTimer?.invalidate()
-            monitoringTimer = Timer.scheduledTimer(withTimeInterval: currentInterval, repeats: true) { [weak self] _ in
-                self?.checkSiriVisibility()
-            }
-            monitoringTimer?.tolerance = currentInterval * 0.1
+        guard axObserver == nil else { return }   // already attached
+
+        guard AXIsProcessTrusted() else {
+            print("⚠️ [SiriVisibilityMonitor] Accessibility permission not granted.")
+            return
+        }
+
+        let bundleID = "com.apple.Siri"
+        if let app = NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).first {
+            attachAXObserver(to: app.processIdentifier)
+        } else {
+            // Siri isn't running yet; the didLaunchApplication observer will handle it.
+            print("ℹ️ [SiriVisibilityMonitor] Siri not running; will attach on launch.")
         }
     }
-    
+
     func stopMonitoring() {
-        monitoringTimer?.invalidate()
-        monitoringTimer = nil
+        teardownAXObserver()
+    }
+
+    // MARK: - AXObserver setup / teardown
+
+    private func attachAXObserver(to pid: pid_t) {
+        teardownAXObserver()
+
+        var obs: AXObserver?
+        let result = AXObserverCreate(pid, siriAXCallback, &obs)
+
+        guard result == .success, let obs else {
+            print("⚠️ [SiriVisibilityMonitor] AXObserverCreate failed (err \(result.rawValue)). Is Accessibility granted?")
+            return
+        }
+
+        let appElement = AXUIElementCreateApplication(pid)
+        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+
+        // Window creation — fires when any Siri window appears.
+        AXObserverAddNotification(obs, appElement, kAXWindowCreatedNotification as CFString, selfPtr)
+
+        // Hidden/deactivated — belt-and-suspenders for when the window is hidden
+        // rather than destroyed (e.g. Siri collapses without fully tearing down the element).
+        AXObserverAddNotification(obs, appElement, kAXApplicationHiddenNotification as CFString, selfPtr)
+
+        // Wire the observer into the main RunLoop. No background thread needed —
+        // the main RunLoop is already running and this is an @MainActor class.
+        CFRunLoopAddSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
+
+        axObserver = obs
+        siriAppElement = appElement
+        print("✅ [SiriVisibilityMonitor] AXObserver attached (Siri PID \(pid))")
+        
+        // Initial check: if Siri is already visible when we attach
+        checkInitialVisibility(pid)
     }
     
-    private func checkSiriVisibility() {
-        let isSiriActive = detectSiriWindow()
+    private func checkInitialVisibility(_ pid: pid_t) {
+        let appElement = AXUIElementCreateApplication(pid)
+        var windows: AnyObject?
+        let result = AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &windows)
         
-        if isSiriActive {
-            // Siri is found: Update state immediately
-            disappearanceConfirmationCount = 0
-            if !lastSiriState {
-                updateSiriVisibility(true)
-            }
-        } else {
-            // Siri not found: Debounce disappearance
-            if lastSiriState {
-                disappearanceConfirmationCount += 1
-                if disappearanceConfirmationCount >= disappearanceThreshold {
-                    updateSiriVisibility(false)
-                    disappearanceConfirmationCount = 0
-                }
+        if result == .success, let windowList = windows as? [AXUIElement], !windowList.isEmpty {
+            // Assume the first window is the Siri overlay
+            if let firstWindow = windowList.first {
+                subscribeToWindowDestruction(firstWindow)
+                setSiriVisible(true)
             }
         }
     }
 
-    private func updateSiriVisibility(_ visible: Bool) {
-        lastSiriState = visible
+    private func teardownAXObserver() {
+        guard let obs = axObserver, let appEl = siriAppElement else { return }
+
+        AXObserverRemoveNotification(obs, appEl, kAXWindowCreatedNotification as CFString)
+        AXObserverRemoveNotification(obs, appEl, kAXApplicationHiddenNotification as CFString)
+
+        if let winEl = trackedWindowElement {
+            AXObserverRemoveNotification(obs, winEl, kAXUIElementDestroyedNotification as CFString)
+            trackedWindowElement = nil
+        }
+
+        CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(obs), .defaultMode)
+        axObserver = nil
+        siriAppElement = nil
+        print("🔴 [SiriVisibilityMonitor] AXObserver detached")
+    }
+
+    // MARK: - Called back from the C callback
+
+    fileprivate func handleAXNotification(_ element: AXUIElement, name: String) {
+        switch name {
+        case kAXWindowCreatedNotification as String:
+            // `element` IS the new window (not the app element).
+            // Subscribe to its destruction so we know precisely when it's gone.
+            subscribeToWindowDestruction(element)
+            setSiriVisible(true)
+
+        case kAXUIElementDestroyedNotification as String:
+            // The specific window we were tracking was destroyed.
+            trackedWindowElement = nil
+            setSiriVisible(false)
+
+        case kAXApplicationHiddenNotification as String:
+            // Siri hidden at the app level (belt-and-suspenders).
+            setSiriVisible(false)
+
+        default:
+            break
+        }
+    }
+
+    private func subscribeToWindowDestruction(_ windowElement: AXUIElement) {
+        guard let obs = axObserver else { return }
+
+        // Unsubscribe from any previous window first.
+        if let prev = trackedWindowElement {
+            AXObserverRemoveNotification(obs, prev, kAXUIElementDestroyedNotification as CFString)
+        }
+
+        let selfPtr = Unmanaged.passUnretained(self).toOpaque()
+        AXObserverAddNotification(obs, windowElement, kAXUIElementDestroyedNotification as CFString, selfPtr)
+        trackedWindowElement = windowElement
+    }
+
+    private func setSiriVisible(_ visible: Bool) {
+        guard isSiriVisible != visible else { return }
         isSiriVisible = visible
-        
-        // Adjust polling rate immediately based on visibility
-        startMonitoring()
+        print("👁️ [SiriVisibilityMonitor] isSiriVisible = \(visible)")
     }
-    
-    private func detectSiriWindow() -> Bool {
-        let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly)
-        guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
-            return false
-        }
-        
-        return windowList.contains { window in
-            let owner = window[kCGWindowOwnerName as String] as? String ?? ""
-            let bounds = window[kCGWindowBounds as String] as? [String: Int] ?? [:]
-            let height = bounds["Height"] ?? 0
-            
-            // Siri lock screen window is large (usually covers bottom half or more)
-            return owner == "Siri" && height > 400
-        }
-    }
-    
-    /// Centralized helper to automatically fade a window based on Siri visibility.
+
+    // MARK: - autohide (unchanged — all 5 manager files keep their existing call)
+
     func autohide(_ window: NSWindow?, cancellables: inout Set<AnyCancellable>) {
         guard let window else { return }
-        
+
         Publishers.CombineLatest($isSiriVisible, LockScreenManager.shared.$isLocked)
             .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
             .receive(on: RunLoop.main)
             .sink { isVisible, isLocked in
-                // Safety: Only manage visibility if the screen is actually locked.
-                // This prevents 'autohide' from fighting with the manager's hide animation
-                // during unlock, and prevents clearing unlock animations via removeAllAnimations().
                 guard isLocked else { return }
-                
                 let targetAlpha: CGFloat = isVisible ? 0.0 : 1.0
-                
-                // Stop any current animation to prevent flickering if state changes mid-fade
                 window.contentView?.layer?.removeAllAnimations()
-                
                 if window.alphaValue != targetAlpha {
                     NSAnimationContext.runAnimationGroup { context in
-                        context.duration = 0.25 // Smooth fade
+                        context.duration = 0.25
                         context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                         window.animator().alphaValue = targetAlpha
                     }
