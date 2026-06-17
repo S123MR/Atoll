@@ -123,14 +123,11 @@ final class SiriVisibilityMonitor: ObservableObject {
             intervals = (idle: 1.00, active: 0.12)
         }
         
-        print("⏱️ [SiriVisibilityMonitor] Mode: \(effectiveMode) (User Pref: \(mode)) -> Intervals: Idle \(intervals.idle)s, Active \(intervals.active)s")
         return intervals
     }
 
     private func updateMonitoringState() {
         let shouldMonitor = isScreenLocked && isDisplayOn
-        
-        print("🔌 [SiriVisibilityMonitor] State Update - Locked: \(isScreenLocked), Display: \(isDisplayOn), Plugged: \(isPluggedIn), LPM: \(isInLowPowerMode)")
         
         if shouldMonitor {
             startMonitoring()
@@ -154,7 +151,6 @@ final class SiriVisibilityMonitor: ObservableObject {
                 self?.performCheck()
             }
         }
-        print("🟢 [SiriVisibilityMonitor] Started polling at \(desiredInterval)s interval")
     }
 
     private func stopMonitoring() {
@@ -165,7 +161,6 @@ final class SiriVisibilityMonitor: ObservableObject {
             setSiriVisible(false)
         }
         disappearanceConfirmations = 0
-        print("🔴 [SiriVisibilityMonitor] Stopped polling")
     }
 
     private func performCheck() {
@@ -221,7 +216,6 @@ final class SiriVisibilityMonitor: ObservableObject {
     private func setSiriVisible(_ visible: Bool) {
         guard isSiriVisible != visible else { return }
         isSiriVisible = visible
-        print("👁️ [SiriVisibilityMonitor] isSiriVisible = \(visible)")
     }
 
     func autohide(_ window: NSWindow?, cancellables: inout Set<AnyCancellable>) {
