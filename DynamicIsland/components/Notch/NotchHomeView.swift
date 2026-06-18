@@ -375,7 +375,7 @@ struct MusicControlsView: View {
     }
 
     private var musicSlider: some View {
-        TimelineView(.animation(minimumInterval: 1.0, paused: isProgressTimelinePaused)) { timeline in
+        TimelineView(.animation(paused: isProgressTimelinePaused)) { timeline in
             MusicSliderView(
                 sliderValue: $sliderValue,
                 duration: $musicManager.songDuration,
@@ -886,15 +886,6 @@ struct MusicSliderView: View {
             onValueChange: onValueChange,
             restingTrackHeight: restingTrackHeight,
             draggingTrackHeight: draggingTrackHeight
-        )
-        // Smoothly interpolate the filled track between 1-second ticks using
-        // Core Animation — runs on the GPU with zero CPU polling cost.
-        // Disabled while dragging or paused so the bar responds instantly.
-        .animation(
-            !dragging && isPlaying && !isLiveStream
-                ? .linear(duration: 1.0)
-                : nil,
-            value: sliderValue
         )
     }
 
