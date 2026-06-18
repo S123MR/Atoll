@@ -1,6 +1,11 @@
 name: Mirror Release To Organization
 
 on:
+  push:
+    branches:
+      - main
+      - master
+      - dev
   release:
     types: [published]
 
@@ -48,6 +53,7 @@ jobs:
       ####################################################################
 
       - name: Download release assets
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -63,6 +69,7 @@ jobs:
       ####################################################################
 
       - name: Save release notes
+        if: github.event_name == 'release'
         run: |
           cat > release_notes.md <<'EOF'
           ${{ github.event.release.body }}
@@ -73,6 +80,7 @@ jobs:
       ####################################################################
 
       - name: Create release if missing
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.ORG_REPO_TOKEN }}
         run: |
@@ -93,6 +101,7 @@ jobs:
           fi
 
       - name: Update release metadata
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.ORG_REPO_TOKEN }}
         run: |
@@ -107,6 +116,7 @@ jobs:
       ####################################################################
 
       - name: Upload assets
+        if: github.event_name == 'release'
         env:
           GH_TOKEN: ${{ secrets.ORG_REPO_TOKEN }}
         run: |
