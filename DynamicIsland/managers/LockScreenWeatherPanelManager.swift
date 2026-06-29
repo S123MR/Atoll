@@ -35,7 +35,6 @@ final class LockScreenWeatherPanelManager {
     private var lastInlineBaselineHeight: CGFloat = 0
     private var screenChangeObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
-    private var cancellables = Set<AnyCancellable>()
     private var siriCancellables = Set<AnyCancellable>()
 
     private init() {
@@ -116,10 +115,10 @@ final class LockScreenWeatherPanelManager {
             SkyLightOperator.shared.delegateWindow(newWindow)
             hasDelegated = true
         }
-        
+
         siriCancellables = Set<AnyCancellable>()
         SiriVisibilityMonitor.shared.autohide(newWindow, cancellables: &siriCancellables)
-        
+
         return newWindow
     }
 

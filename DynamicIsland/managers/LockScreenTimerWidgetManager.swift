@@ -139,7 +139,6 @@ final class LockScreenTimerWidgetPanelManager {
     private(set) var latestFrame: NSRect?
     private var screenChangeObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
-    private var cancellables = Set<AnyCancellable>()
     private var siriCancellables = Set<AnyCancellable>()
 
     private init() {

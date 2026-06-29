@@ -25,13 +25,13 @@ final class SiriVisibilityMonitor: ObservableObject {
     static let shared = SiriVisibilityMonitor()
 
     @Published private(set) var isSiriVisible = false
-    
+
     private var isScreenLocked = false
     private var isDisplayOn = true
     private var isPluggedIn = false
     private var isInLowPowerMode = false
     private var cancellables = Set<AnyCancellable>()
-    
+
     private var monitoringTimer: Timer?
     private var disappearanceConfirmations = 0
     private let disappearanceThreshold = 2
@@ -41,7 +41,7 @@ final class SiriVisibilityMonitor: ObservableObject {
     private var currentIdleInterval: TimeInterval {
         calculateIntervals().idle
     }
-    
+
     private var currentActiveInterval: TimeInterval {
         calculateIntervals().active
     }
@@ -88,7 +88,7 @@ final class SiriVisibilityMonitor: ObservableObject {
                 }
             }
         }
-        
+
         // Observe user preference changes to responsiveness mode
         Defaults.publisher(.siriResponsivenessMode)
             .receive(on: RunLoop.main)
@@ -100,7 +100,7 @@ final class SiriVisibilityMonitor: ObservableObject {
 
     private func calculateIntervals() -> (idle: TimeInterval, active: TimeInterval) {
         let mode = Defaults[.siriResponsivenessMode]
-        
+
         let effectiveMode: SiriResponsivenessMode
         if mode == .automatic {
             if isInLowPowerMode {
@@ -123,13 +123,14 @@ final class SiriVisibilityMonitor: ObservableObject {
         case .powerSaver:
             intervals = (idle: 1.00, active: 0.12) // ~1Hz idle, ~8Hz active
         }
-        
+
         return intervals
     }
 
     private func updateMonitoringState() {
+        guard #available(macOS 27, *) else { return }
         let shouldMonitor = isScreenLocked && isDisplayOn
-        
+
         if shouldMonitor {
             startMonitoring()
         } else {
@@ -139,13 +140,13 @@ final class SiriVisibilityMonitor: ObservableObject {
 
     private func startMonitoring() {
         let desiredInterval = isSiriVisible ? currentActiveInterval : currentIdleInterval
-        
+
         if let currentTimer = monitoringTimer, currentTimer.isValid {
             if currentTimer.timeInterval == desiredInterval {
                 return
             }
         }
-        
+
         monitoringTimer?.invalidate()
         monitoringTimer = Timer.scheduledTimer(withTimeInterval: desiredInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in
@@ -157,7 +158,7 @@ final class SiriVisibilityMonitor: ObservableObject {
     private func stopMonitoring() {
         monitoringTimer?.invalidate()
         monitoringTimer = nil
-        
+
         if isSiriVisible {
             setSiriVisible(false)
         }
@@ -242,6 +243,7 @@ final class SiriVisibilityMonitor: ObservableObject {
     }
 
     func autohide(_ window: NSWindow?, cancellables: inout Set<AnyCancellable>) {
+        guard #available(macOS 27, *) else { return }
         guard let window else { return }
 
         Publishers.CombineLatest($isSiriVisible, LockScreenManager.shared.$isLocked)
@@ -249,10 +251,10 @@ final class SiriVisibilityMonitor: ObservableObject {
             .receive(on: RunLoop.main)
             .sink { [weak window] isVisible, isLocked in
                 guard let window, isLocked else { return }
-                
+
                 let targetAlpha: CGFloat = isVisible ? 0.0 : 1.0
                 window.contentView?.layer?.removeAllAnimations()
-                
+
                 if window.alphaValue != targetAlpha {
                     NSAnimationContext.runAnimationGroup { context in
                         context.duration = 0.25
