@@ -32,6 +32,7 @@ final class LockScreenReminderWidgetPanelManager {
     private var screenChangeObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var cancellables = Set<AnyCancellable>()
+    private var siriCancellables = Set<AnyCancellable>()
 
     var isVisible: Bool {
         window?.isVisible == true
@@ -118,7 +119,8 @@ final class LockScreenReminderWidgetPanelManager {
             hasDelegated = true
         }
         
-        SiriVisibilityMonitor.shared.autohide(newWindow, cancellables: &cancellables)
+        siriCancellables = Set<AnyCancellable>()
+        SiriVisibilityMonitor.shared.autohide(newWindow, cancellables: &siriCancellables)
         
         return newWindow
     }

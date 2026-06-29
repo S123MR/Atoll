@@ -105,9 +105,8 @@ class LockScreenLiveActivityWindowManager {
         self.hasDelegated = false
         
         // Use the centralized autohide helper
-        var siriCancellables = Set<AnyCancellable>()
-        SiriVisibilityMonitor.shared.autohide(window, cancellables: &siriCancellables)
-        self.siriVisibilityCancellables = siriCancellables
+        siriVisibilityCancellables = Set<AnyCancellable>()
+        SiriVisibilityMonitor.shared.autohide(window, cancellables: &siriVisibilityCancellables)
 
         return window
     }
@@ -150,8 +149,7 @@ class LockScreenLiveActivityWindowManager {
         }
         workspaceObservers = [wakeObserver]
     }
-
-
+    
     private func handleScreenGeometryChange(reason: String) {
         guard let window else { return }
         guard window.isVisible || window.alphaValue > 0.01 else { return }

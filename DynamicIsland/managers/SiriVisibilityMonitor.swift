@@ -34,7 +34,8 @@ final class SiriVisibilityMonitor: ObservableObject {
     
     private var monitoringTimer: Timer?
     private var disappearanceConfirmations = 0
-    private let disappearanceThreshold = 2 
+    private let disappearanceThreshold = 2
+    private var batteryObserverID: Int?
 
     // Polling intervals calculated dynamically
     private var currentIdleInterval: TimeInterval {
@@ -76,12 +77,15 @@ final class SiriVisibilityMonitor: ObservableObject {
             self?.updateMonitoringState()
         }
         self.isInLowPowerMode = ProcessInfo.processInfo.isLowPowerModeEnabled
+        self.isPluggedIn = BatteryActivityManager.shared.initializeBatteryInfo().isPluggedIn
 
         // Observe plug-in state via BatteryActivityManager
-        BatteryActivityManager.shared.onPowerSourceChange = { [weak self] pluggedIn in
-            Task { @MainActor in
-                self?.isPluggedIn = pluggedIn
-                self?.updateMonitoringState()
+        batteryObserverID = BatteryActivityManager.shared.addObserver { [weak self] event in
+            if case .powerSourceChanged(let pluggedIn) = event {
+                Task { @MainActor in
+                    self?.isPluggedIn = pluggedIn
+                    self?.updateMonitoringState()
+                }
             }
         }
         
@@ -113,14 +117,11 @@ final class SiriVisibilityMonitor: ObservableObject {
         let intervals: (idle: TimeInterval, active: TimeInterval)
         switch effectiveMode {
         case .highPerformance:
-            // Old: idle: 0.20s, active: 0.03s -> Upgraded to 0.10s / 0.03s for ultimate performance
-            intervals = (idle: 0.10, active: 0.03)
+            intervals = (idle: 0.10, active: 0.03) // ~10Hz idle, ~33Hz active
         case .balanced, .automatic:
-            // Old: idle: 0.50s, active: 0.06s -> Upgraded to 0.15s / 0.05s for smooth battery-conscious responsiveness
-            intervals = (idle: 0.15, active: 0.05)
+            intervals = (idle: 0.15, active: 0.05) // ~6.6Hz idle, ~20Hz active
         case .powerSaver:
-            // Old: idle: 2.00s, active: 0.25s -> Upgraded to 1.00s / 0.12s for maximized power saving without extreme lag
-            intervals = (idle: 1.00, active: 0.12)
+            intervals = (idle: 1.00, active: 0.12) // ~1Hz idle, ~8Hz active
         }
         
         return intervals
@@ -164,52 +165,53 @@ final class SiriVisibilityMonitor: ObservableObject {
     }
 
     private func performCheck() {
-        // Double check preconditions
         guard isScreenLocked && isDisplayOn else {
             stopMonitoring()
             return
         }
-        
-        let isSiriActive = detectSiriWindow()
-        
-        if isSiriActive {
-            disappearanceConfirmations = 0
-            if !isSiriVisible {
-                setSiriVisible(true)
-                // Instantly speed up polling rate to track dismissal
-                startMonitoring()
-            }
-        } else {
-            if isSiriVisible {
-                disappearanceConfirmations += 1
-                if disappearanceConfirmations >= disappearanceThreshold {
-                    setSiriVisible(false)
-                    disappearanceConfirmations = 0
-                    // Drop back to slow polling rate
-                    startMonitoring()
-                }
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let isSiriActive = SiriVisibilityMonitor.detectSiriWindowOffMain()
+            await MainActor.run { [weak self] in
+                self?.applyDetectionResult(isSiriActive)
             }
         }
     }
 
-    private func detectSiriWindow() -> Bool {
+    private static nonisolated func detectSiriWindowOffMain() -> Bool {
         let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly)
-        guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+        guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
             return false
         }
-        
-        return windowList.contains { window in
-            let owner = window[kCGWindowOwnerName as String] as? String ?? ""
-            let layer = window[kCGWindowLayer as String] as? Int ?? 0
-            let bounds = window[kCGWindowBounds as String] as? [String: Int] ?? [:]
+        return list.contains { info in
+            let owner  = info[kCGWindowOwnerName as String] as? String ?? ""
+            let layer  = info[kCGWindowLayer as String] as? Int ?? 0
+            let bounds = info[kCGWindowBounds as String] as? [String: Int] ?? [:]
             let height = bounds["Height"] ?? 0
-            let alpha = window[kCGWindowAlpha as String] as? Float ?? 1.0
-            
-            // Siri is owner "Siri" or Apple Intelligence "CampoRemoteService". Layer 23 is the Siri layer.
-            let isSiri = (owner == "Siri" || owner == "CampoRemoteService") && layer == 23
-            let isVisible = alpha > 0.1 && height > 400
-            
+            let alpha  = info[kCGWindowAlpha as String] as? Float ?? 1.0
+
+            let isSiri = (owner == SiriWindowConstants.siriOwnerName
+                          || owner == SiriWindowConstants.appleIntelligenceOwnerName)
+                         && layer == SiriWindowConstants.windowLayer
+            let isVisible = alpha > SiriWindowConstants.minimumAlpha
+                            && height > SiriWindowConstants.minimumHeight
             return isSiri && isVisible
+        }
+    }
+
+    private func applyDetectionResult(_ isSiriActive: Bool) {
+        if isSiriActive {
+            disappearanceConfirmations = 0
+            if !isSiriVisible {
+                setSiriVisible(true)
+                startMonitoring()
+            }
+        } else if isSiriVisible {
+            disappearanceConfirmations += 1
+            if disappearanceConfirmations >= disappearanceThreshold {
+                setSiriVisible(false)
+                disappearanceConfirmations = 0
+                startMonitoring()
+            }
         }
     }
 
@@ -218,14 +220,35 @@ final class SiriVisibilityMonitor: ObservableObject {
         isSiriVisible = visible
     }
 
+    // MARK: - Siri Window Detection Constants
+    // These values are macOS 27-specific internals observed via CGWindowListCopyWindowInfo.
+    // They ARE expected to change on future macOS major releases — audit on every OS bump.
+    private enum SiriWindowConstants {
+        /// CGWindowLayer assigned to the Siri / Apple Intelligence overlay on macOS 27.
+        static let windowLayer: Int = 23
+
+        /// Minimum window height in points used to distinguish the full Siri overlay
+        /// from incidental utility windows owned by the same process.
+        static let minimumHeight: Int = 400
+
+        /// Alpha threshold below which the overlay is considered invisible.
+        static let minimumAlpha: Float = 0.1
+
+        /// CGWindowOwnerName for the classic Siri process.
+        static let siriOwnerName = "Siri"
+
+        /// CGWindowOwnerName for the Apple Intelligence / Campo process on macOS 27.
+        static let appleIntelligenceOwnerName = "CampoRemoteService"
+    }
+
     func autohide(_ window: NSWindow?, cancellables: inout Set<AnyCancellable>) {
         guard let window else { return }
 
         Publishers.CombineLatest($isSiriVisible, LockScreenManager.shared.$isLocked)
             .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
             .receive(on: RunLoop.main)
-            .sink { isVisible, isLocked in
-                guard isLocked else { return }
+            .sink { [weak window] isVisible, isLocked in
+                guard let window, isLocked else { return }
                 
                 let targetAlpha: CGFloat = isVisible ? 0.0 : 1.0
                 window.contentView?.layer?.removeAllAnimations()
@@ -239,5 +262,11 @@ final class SiriVisibilityMonitor: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+    }
+
+    deinit {
+        if let id = batteryObserverID {
+            BatteryActivityManager.shared.removeObserver(byId: id)
+        }
     }
 }

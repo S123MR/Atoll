@@ -140,6 +140,7 @@ final class LockScreenTimerWidgetPanelManager {
     private var screenChangeObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var cancellables = Set<AnyCancellable>()
+    private var siriCancellables = Set<AnyCancellable>()
 
     private init() {
         registerScreenChangeObservers()
@@ -246,7 +247,8 @@ final class LockScreenTimerWidgetPanelManager {
             hasDelegated = true
         }
 
-        SiriVisibilityMonitor.shared.autohide(newWindow, cancellables: &cancellables)
+        siriCancellables = Set<AnyCancellable>()
+        SiriVisibilityMonitor.shared.autohide(newWindow, cancellables: &siriCancellables)
 
         return newWindow
     }

@@ -626,9 +626,9 @@ enum SiriResponsivenessMode: String, CaseIterable, Identifiable, Defaults.Serial
     var description: String {
         switch self {
         case .automatic: return String(localized: "Adapts based on power source and battery level.")
-        case .highPerformance: return String(localized: "Ultra-fast detection (10Hz) for near-instant hiding.")
-        case .balanced: return String(localized: "Standard detection (6.6Hz) for smooth responsiveness.")
-        case .powerSaver: return String(localized: "Slower detection (1Hz) to maximize battery life.")
+        case .highPerformance: return String(localized: "Ultra-fast detection (~33Hz active / ~10Hz idle) for near-instant hiding.")
+        case .balanced: return String(localized: "Standard detection (~20Hz active / ~6.6Hz idle) for smooth responsiveness.")
+        case .powerSaver: return String(localized: "Slower detection (~8Hz active / ~1Hz idle) to maximize battery life.")
         }
     }
 }
