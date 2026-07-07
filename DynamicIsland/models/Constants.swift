@@ -427,7 +427,7 @@ enum SneakPeekStyle: String, CaseIterable, Identifiable, Defaults.Serializable {
     
     var id: String { self.rawValue }
     
-    var LocalizedName : String {
+    var localizedName: String {
         switch self {
         case .standard: return String(localized: "Default")
         case .inline: return String(localized: "Inline")
