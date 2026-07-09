@@ -150,8 +150,16 @@ class SystemOSDManager {
     /// termination handler.
     public static func resumeOSDUIHelperForTermination() {
         suppressionState.withLock { $0.active = false }
-        // Cancel the watcher first so it cannot re-SIGSTOP the helper we resume.
-        stopSuppressionWatcher()
+
+        // Cancel the watcher and wait for it to fully exit before resuming. A
+        // bare cancel is cooperative, so an in-flight suspendOSDUIHelper() could
+        // otherwise land its SIGSTOP after our SIGCONT and re-freeze the helper.
+        // Bridge the async drain to this synchronous path with a bounded wait.
+        if let watcher = stopSuppressionWatcher() {
+            let drained = DispatchSemaphore(value: 0)
+            Task { await watcher.value; drained.signal() }
+            _ = drained.wait(timeout: .now() + 1.0)
+        }
 
         let resume = Process()
         resume.executableURL = URL(fileURLWithPath: "/usr/bin/killall")
@@ -297,7 +305,10 @@ class SystemOSDManager {
         previous?.cancel()
     }
 
-    private static func stopSuppressionWatcher() {
+    /// Cancels the suppression watcher. Returns the cancelled task so callers
+    /// that must not race it (e.g. termination) can wait for it to fully exit.
+    @discardableResult
+    private static func stopSuppressionWatcher() -> Task<Void, Never>? {
         let previous = suppressionState.withLock { state -> Task<Void, Never>? in
             let prior = state.task
             state.task = nil
@@ -305,6 +316,7 @@ class SystemOSDManager {
             return prior
         }
         previous?.cancel()
+        return previous
     }
 
     /// Returns the newest OSDUIHelper PID, or nil if none.
