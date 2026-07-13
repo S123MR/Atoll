@@ -1,0 +1,7 @@
+scheme: DynamicIsland
+
+# device, sim or mac:
+platform: mac
+
+# faster builds
+buildwithxcode: true
