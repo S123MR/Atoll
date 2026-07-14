@@ -2774,7 +2774,7 @@ struct Media: View {
     @Default(.colorExtractionMode) private var colorExtractionMode
     @Default(.parallaxEffectIntensity) private var parallaxEffectIntensity
 
-    
+
     @ObservedObject private var musicManager = MusicManager.shared
 
     private var isAppleMusicActive: Bool {
@@ -2933,7 +2933,7 @@ struct Media: View {
                 }
                 .settingsHighlight(id: highlightID("Show live canvas in Dynamic Island"))
                 .help("Replaces the artwork tile with the live canvas when the current app provides one, and reuses that moving canvas for the surrounding lighting effect.")
-                
+
                 //Parallax Effect Intensity to control how much parallax is wanted
                 Slider(value: $parallaxEffectIntensity, in: 0...12, step: 1.0) {
                     HStack {
@@ -2944,7 +2944,7 @@ struct Media: View {
                     }
                 }
                 .settingsHighlight(id: highlightID("Enable album art parallax effect"))
-                
+
                 Picker("Sneak Peek Style", selection: $sneakPeekStyles){
                     ForEach(SneakPeekStyle.allCases) { style in
                         Text(style.localizedName).tag(style)
@@ -2963,7 +2963,7 @@ struct Media: View {
                         }
                     }
                 }
-                
+
                 Defaults.Toggle(key: .showSongMetadataInClosedNotch) {
                     Text("Show song title and artist on non-notch displays")
                 }
@@ -3434,7 +3434,7 @@ struct CalendarSettings: View {
                     .disabled(!lockScreenShowCalendarEvent)
                     .settingsHighlight(id: highlightID("Show start time after event begins"))
                 }
-                
+
                 // MARK: - Third-party Calendar Integration
                 Section {
                     Defaults.Toggle(key: .enableThirdPartyCalendarApp) {
@@ -3446,7 +3446,7 @@ struct CalendarSettings: View {
                         }
                     }
                     .settingsHighlight(id: highlightID("Enable third-party calendar app launch"))
-                    
+
                     if enableThirdPartyCalendarApp {
                         Picker("Calendar App", selection: $selectedCalendarApp) {
                             ForEach(ThirdPartyCalendarApp.allCases) { app in
@@ -3462,7 +3462,7 @@ struct CalendarSettings: View {
                             }
                         }
                         .settingsHighlight(id: highlightID("Calendar App"))
-                        
+
                         if selectedCalendarApp == .fantastical {
                             Picker("Default View", selection: $fantasticalDefaultView) {
                                 ForEach(FantasticalViewStyle.allCases, id: \.self) { style in
@@ -3926,7 +3926,7 @@ struct Shelf: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
-            
+
             if quickShareProvider == "LocalSend" {
                 LocalSendSettingsSection(highlightID: highlightID)
             }
@@ -3944,10 +3944,10 @@ struct Shelf: View {
 
 private struct LocalSendSettingsSection: View {
     let highlightID: (String) -> String
-    
+
     @Default(.localSendDevicePickerGlassMode) private var glassMode
     @Default(.localSendDevicePickerLiquidGlassVariant) private var liquidGlassVariant
-    
+
     var body: some View {
         Section {
             Picker("Device Picker Style", selection: $glassMode) {
@@ -3956,7 +3956,7 @@ private struct LocalSendSettingsSection: View {
                 }
             }
             .pickerStyle(.menu)
-            
+
             if glassMode == .customLiquid {
                 Picker("Liquid Glass Variant", selection: $liquidGlassVariant) {
                     ForEach(LiquidGlassVariant.allCases) { variant in
@@ -4619,7 +4619,7 @@ struct Appearance: View {
                         .tag(MirrorShapeEnum.rectangle)
                 }
                 .settingsHighlight(id: highlightID("Mirror shape"))
-                
+
                 if webcamManager.cameraAvailable {
                     Picker("Mirror Camera", selection: $selectedCameraID) {
                         ForEach(webcamManager.availableCameras, id: \.uniqueID) { device in
@@ -5009,6 +5009,7 @@ struct LockScreenSettings: View {
     @Default(.lockScreenSelectedCalendarIDs) private var lockScreenSelectedCalendarIDs
     @Default(.lockScreenShowCalendarEventAfterStartEnabled) private var lockScreenShowCalendarEventAfterStartEnabled
     @Default(.lockScreenMusicMergedAirPlayOutput) private var lockScreenMusicMergedAirPlayOutput
+    @Default(.siriResponsivenessMode) private var siriResponsivenessMode
     @ObservedObject private var musicManager = MusicManager.shared
 
     private var isAppleMusicActive: Bool {
@@ -5107,6 +5108,26 @@ struct LockScreenSettings: View {
                 Text("Live Activity & Feedback")
             } footer: {
                 Text("Controls whether Dynamic Island mirrors lock/unlock events with its own live activity and audible chimes.")
+            }
+
+            if #available(macOS 27, *) {
+                Section {
+                    Picker("Siri detection speed", selection: $siriResponsivenessMode) {
+                        ForEach(SiriResponsivenessMode.allCases) { mode in
+                            VStack(alignment: .leading) {
+                                Text(mode.displayName)
+                                Text(mode.description)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }.tag(mode)
+                        }
+                    }
+                    .settingsHighlight(id: highlightID("Siri detection speed"))
+                } header: {
+                    Text("Siri Detection")
+                } footer: {
+                    Text("Higher speeds allow widgets to hide almost instantly when Siri is invoked, but may impact battery life when on battery power.")
+                }
             }
 
             Section {
@@ -8051,14 +8072,14 @@ struct CustomOSDSettings: View {
                                     previewType = .brightness
                                 }
                                 .buttonStyle(.bordered)
-                                
+
                                 Button("Backlight") {
                                     previewType = .backlight
                                 }
                                 .buttonStyle(.bordered)
                             }
                             .controlSize(.small)
-                            
+
                             Slider(value: $previewValue, in: 0...1)
                                 .frame(width: 160)
                         }

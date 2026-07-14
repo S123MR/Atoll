@@ -21,6 +21,7 @@ import SwiftUI
 import SkyLightWindow
 import QuartzCore
 import Defaults
+import Combine
 
 @MainActor
 final class LockScreenReminderWidgetPanelManager {
@@ -49,6 +50,7 @@ final class LockScreenReminderWidgetPanelManager {
 
     func hide() {
         guard let window else { return }
+        restoreVisibleAlpha(for: window)
         window.orderOut(nil)
         window.contentView = nil
     }
@@ -67,6 +69,10 @@ final class LockScreenReminderWidgetPanelManager {
         }
     }
 
+    private func restoreVisibleAlpha(for window: NSWindow) {
+        SiriVisibilityMonitor.shared.refreshVisibilityState(for: window)
+    }
+
     private func render(snapshot: LockScreenReminderWidgetSnapshot, makeVisible: Bool) {
         guard let screen = currentScreen() else { return }
         if !makeVisible, window == nil {
@@ -79,6 +85,7 @@ final class LockScreenReminderWidgetPanelManager {
         hostingView.frame = NSRect(origin: .zero, size: fittingSize)
 
         let window = ensureWindow()
+        restoreVisibleAlpha(for: window)
         window.setFrame(frame(for: fittingSize, on: screen), display: true)
         window.contentView = hostingView
 
@@ -115,6 +122,9 @@ final class LockScreenReminderWidgetPanelManager {
             SkyLightOperator.shared.delegateWindow(newWindow)
             hasDelegated = true
         }
+
+        SiriVisibilityMonitor.shared.autohide(newWindow)
+
         return newWindow
     }
 

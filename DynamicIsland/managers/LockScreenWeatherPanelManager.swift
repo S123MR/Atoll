@@ -21,6 +21,7 @@ import SwiftUI
 import SkyLightWindow
 import Defaults
 import QuartzCore
+import Combine
 
 @MainActor
 final class LockScreenWeatherPanelManager {
@@ -113,6 +114,10 @@ final class LockScreenWeatherPanelManager {
             SkyLightOperator.shared.delegateWindow(newWindow)
             hasDelegated = true
         }
+
+        SiriVisibilityMonitor.shared.autohide(newWindow)
+        SiriVisibilityMonitor.shared.refreshVisibilityState(for: newWindow)
+
         return newWindow
     }
 

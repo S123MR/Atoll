@@ -144,8 +144,11 @@ class LockScreenPanelManager {
             panelWindow = newWindow
             window = newWindow
             hasDelegated = false
+
+            SiriVisibilityMonitor.shared.autohide(newWindow)
         }
 
+        SiriVisibilityMonitor.shared.refreshVisibilityState(for: window)
         window.setFrame(targetFrame, display: true)
         publishPanelFrame(targetFrame)
         hideTask?.cancel()

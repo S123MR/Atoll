@@ -245,6 +245,9 @@ final class LockScreenTimerWidgetPanelManager {
             hasDelegated = true
         }
 
+        SiriVisibilityMonitor.shared.autohide(newWindow)
+        SiriVisibilityMonitor.shared.refreshVisibilityState(for: newWindow)
+
         return newWindow
     }
 

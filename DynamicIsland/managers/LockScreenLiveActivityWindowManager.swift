@@ -21,6 +21,7 @@ import Defaults
 import SkyLightWindow
 import SwiftUI
 import QuartzCore
+import Combine
 
 @MainActor
 class LockScreenLiveActivityWindowManager {
@@ -101,6 +102,10 @@ class LockScreenLiveActivityWindowManager {
 
         self.window = window
         self.hasDelegated = false
+
+        SiriVisibilityMonitor.shared.autohide(window)
+        SiriVisibilityMonitor.shared.refreshVisibilityState(for: window)
+
         return window
     }
 
