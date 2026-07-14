@@ -16,11 +16,6 @@ buildServer.json
 *.xcuserdata
 *.xcodeproj/xcshareddata/WorkspaceSettings.xcsettings
 *.xcsettings
-
-# prevent team changes being tracked
-DynamicIsland.xcodeproj/
-project.pbxproj
-
 # CocoaPods
 Pods/
 podfile.lock
