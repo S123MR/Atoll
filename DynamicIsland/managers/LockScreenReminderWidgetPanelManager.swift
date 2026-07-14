@@ -70,8 +70,7 @@ final class LockScreenReminderWidgetPanelManager {
     }
 
     private func restoreVisibleAlpha(for window: NSWindow) {
-        window.contentView?.layer?.removeAllAnimations()
-        window.alphaValue = 1
+        SiriVisibilityMonitor.shared.refreshVisibilityState(for: window)
     }
 
     private func render(snapshot: LockScreenReminderWidgetSnapshot, makeVisible: Bool) {

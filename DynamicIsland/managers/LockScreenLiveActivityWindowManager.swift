@@ -104,6 +104,7 @@ class LockScreenLiveActivityWindowManager {
         self.hasDelegated = false
 
         SiriVisibilityMonitor.shared.autohide(window)
+        SiriVisibilityMonitor.shared.refreshVisibilityState(for: window)
 
         return window
     }

@@ -243,6 +243,27 @@ final class SiriVisibilityMonitor: ObservableObject {
         static let appleIntelligenceOwnerName = "CampoRemoteService"
     }
 
+    func refreshVisibilityState(for window: NSWindow?) {
+        guard let window else { return }
+
+        let targetAlpha: CGFloat
+        if #available(macOS 27, *) {
+            targetAlpha = (isSiriVisible && LockScreenManager.shared.isLocked) ? 0.0 : 1.0
+        } else {
+            targetAlpha = 1.0
+        }
+
+        window.contentView?.layer?.removeAllAnimations()
+
+        if window.alphaValue != targetAlpha {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.25
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                window.animator().alphaValue = targetAlpha
+            }
+        }
+    }
+
     func autohide(_ window: NSWindow?) {
         guard #available(macOS 27, *) else { return }
         guard let window else { return }
@@ -254,8 +275,12 @@ final class SiriVisibilityMonitor: ObservableObject {
         let subscription = Publishers.CombineLatest($isSiriVisible, LockScreenManager.shared.$isLocked)
             .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
             .receive(on: RunLoop.main)
-            .sink { [weak window] isVisible, isLocked in
-                guard let window, isLocked else { return }
+            .sink { [weak self, weak window] isVisible, isLocked in
+                guard let self, let window else { return }
+                guard isLocked else {
+                    self.refreshVisibilityState(for: window)
+                    return
+                }
 
                 let targetAlpha: CGFloat = isVisible ? 0.0 : 1.0
                 window.contentView?.layer?.removeAllAnimations()
@@ -270,6 +295,7 @@ final class SiriVisibilityMonitor: ObservableObject {
             }
 
         autohideSubscriptions[key] = subscription
+        refreshVisibilityState(for: window)
     }
 
     deinit {

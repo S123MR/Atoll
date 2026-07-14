@@ -116,6 +116,7 @@ final class LockScreenWeatherPanelManager {
         }
 
         SiriVisibilityMonitor.shared.autohide(newWindow)
+        SiriVisibilityMonitor.shared.refreshVisibilityState(for: newWindow)
 
         return newWindow
     }
