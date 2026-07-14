@@ -47,7 +47,7 @@ Atoll turns the MacBook notch into a focused command surface for media, system i
 
 
 ## Highlights
-- Media controls for Apple Music, Spotify, and more with inline previews.
+- Media controls for Apple Music, Spotify, Cider, and more with inline previews.
 - Live Activities for media playback, Focus, screen recording, privacy indicators, downloads (beta), and battery/charging.
 - Lock screen widgets for media, timers, charging, Bluetooth devices, and weather.
 - Lightweight system insight for CPU, GPU, memory, network, and disk usage.
@@ -120,6 +120,10 @@ Atoll builds upon the work of several open-source projects and draws inspiration
 - [**DynamicNotch**](https://github.com/jackson-storm/DynamicNotch) - thanks DynamicNotch for letting us use their battery huds
 
 - Wick - Thanks Nate for allowing us to replicate the iOS like Timer design for the Lock Screen Widget
+
+- [**OpenUsage**](https://github.com/robinebers/openusage) - LLM Usage Tracking features
+
+- [**OpenRouter**](https://openrouter.ai) - API for getting automated model pricing
 
 ## Contributors
 

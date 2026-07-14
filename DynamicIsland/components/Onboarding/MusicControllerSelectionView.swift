@@ -101,7 +101,7 @@ struct ControllerOptionView: View {
                 .animation(.spring(response: 0.3, dampingFraction: 0.6), value: isSelected)
 
             VStack(alignment: .leading, spacing: 4) {
-                Text(controller.rawValue)
+                Text(controller.localizedName)
                     .font(.headline)
                     .fontWeight(.semibold)
 
@@ -145,6 +145,8 @@ extension MediaControllerType {
             return String(localized: "Requires a third-party client with API plugin enabled.")
         case .amazonMusic:
             return String(localized: "Uses macOS Now Playing when the Amazon Music app is the active media source. Playback controls follow the system Now Playing target. Scrubbing the timeline may not work if the Amazon Music app does not support remote seek.")
+        case .cider:
+            return String(localized: "Uses macOS Now Playing when Cider is the active media source. Playback controls follow the system Now Playing target.")
         }
     }
 }

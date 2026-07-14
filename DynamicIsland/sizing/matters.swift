@@ -132,8 +132,13 @@ let notchShadowPaddingStandard: CGFloat = 18
 let notchShadowPaddingMinimalistic: CGFloat = 12
 
 @MainActor
-var minimalisticOpenNotchSize: CGSize {
+func minimalisticOpenNotchSize(isDynamicIslandMode: Bool) -> CGSize {
     var size = minimalisticBaseOpenNotchSize
+
+    if isDynamicIslandMode {
+        size.width = 340 // Reduced from 420 for a narrower pill
+        size.height = 144 // Exact height of the minimalistic music player view
+    }
 
     if Defaults[.enableLyrics] {
         size.height += minimalisticLyricsExtraHeight
@@ -305,7 +310,7 @@ func getScreenFrame(_ screen: String? = nil) -> CGRect? {
 func getClosedNotchSize(screen: String? = nil) -> CGSize {
     // Default notch size, to avoid using optionals
     var notchHeight: CGFloat = Defaults[.nonNotchHeight]
-    var notchWidth: CGFloat = 185
+    var notchWidth: CGFloat = Defaults[.closedNotchWidth]
 
     var selectedScreen = NSScreen.main
 
@@ -320,6 +325,10 @@ func getClosedNotchSize(screen: String? = nil) -> CGSize {
            let topRightNotchpadding: CGFloat = screen.auxiliaryTopRightArea?.width
         {
             notchWidth = screen.frame.width - topLeftNotchpadding - topRightNotchpadding + 4
+            
+            if Defaults[.customizePhysicalNotchWidth] {
+                notchWidth = Defaults[.closedNotchWidth]
+            }
         }
 
         // Check if the Mac has a notch

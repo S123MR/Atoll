@@ -406,7 +406,8 @@ enum MediaControllerType: String, CaseIterable, Identifiable, Defaults.Serializa
     case spotify = "Spotify"
     case youtubeMusic = "Youtube Music"
     case amazonMusic = "Amazon Music"
-
+    case cider = "Cider"
+    
     var id: String { self.rawValue }
 
     var localizedName: String {
@@ -416,6 +417,7 @@ enum MediaControllerType: String, CaseIterable, Identifiable, Defaults.Serializa
         case .spotify: return String(localized: "Spotify")
         case .youtubeMusic: return String(localized: "Youtube Music")
         case .amazonMusic: return String(localized: "Amazon Music")
+        case .cider: return String(localized: "Cider")
         }
     }
 }
@@ -426,11 +428,31 @@ enum SneakPeekStyle: String, CaseIterable, Identifiable, Defaults.Serializable {
     case inline = "Inline"
 
     var id: String { self.rawValue }
-
-    var LocalizedName : String {
+    
+    var localizedName: String {
         switch self {
         case .standard: return String(localized: "Default")
         case .inline: return String(localized: "Inline")
+        }
+    }
+}
+
+enum LogLevel: Int, CaseIterable, Identifiable, Defaults.Serializable {
+    case none = 0
+    case error = 1
+    case warning = 2
+    case info = 3
+    case debug = 4
+    
+    var id: Int { self.rawValue }
+    
+    var displayName: String {
+        switch self {
+        case .none: return "No Logging"
+        case .error: return "Error"
+        case .warning: return "Warning"
+        case .info: return "Info"
+        case .debug: return "Debug"
         }
     }
 }
@@ -830,8 +852,14 @@ struct NoteItem: Codable, Identifiable, Defaults.Serializable, Hashable {
     }
 }
 
+enum ColorExtractionMode: String, CaseIterable, Identifiable, Defaults.Serializable {
+    case legacy, vibrant
+    var id: Self { self }
+}
+
 extension Defaults.Keys {
         // MARK: General
+    static let logLevel = Key<LogLevel>("logLevel", default: .none)
     static let menubarIcon = Key<Bool>("menubarIcon", default: true)
     static let showOnAllDisplays = Key<Bool>("showOnAllDisplays", default: false)
     static let automaticallySwitchDisplay = Key<Bool>("automaticallySwitchDisplay", default: true)
@@ -859,6 +887,8 @@ extension Defaults.Keys {
     static let nonNotchHeight = Key<CGFloat>("nonNotchHeight", default: 32)
     static let notchHeight = Key<CGFloat>("notchHeight", default: 32)
     static let openNotchWidth = Key<CGFloat>("openNotchWidth", default: 640)
+    static let closedNotchWidth = Key<CGFloat>("closedNotchWidth", default: 150)
+    static let customizePhysicalNotchWidth = Key<Bool>("customizePhysicalNotchWidth", default: false)
         //static let openLastTabByDefault = Key<Bool>("openLastTabByDefault", default: false)
 
         // MARK: Appearance
@@ -887,6 +917,9 @@ extension Defaults.Keys {
     )
     static let playerColorTinting = Key<Bool>("playerColorTinting", default: true)
     static let useMusicVisualizer = Key<Bool>("useMusicVisualizer", default: true)
+    static let visualizerBarCount = Key<Int>("visualizerBarCount", default: 4)
+    static let enableWaveformScrubber = Key<Bool>("enableWaveformScrubber", default: true)
+    static let colorExtractionMode = Key<ColorExtractionMode>("colorExtractionMode", default: .vibrant)
     static let customVisualizers = Key<[CustomVisualizer]>("customVisualizers", default: [])
     static let selectedVisualizer = Key<CustomVisualizer?>("selectedVisualizer", default: nil)
     static let customAppIcons = Key<[CustomAppIcon]>("customAppIcons", default: [])
@@ -1002,6 +1035,7 @@ extension Defaults.Keys {
     static let showBatteryIndicator = Key<Bool>("showBatteryIndicator", default: BatteryActivityManager.shared.hasBattery())
     static let showBatteryPercentage = Key<Bool>("showBatteryPercentage", default: true)
     static let showBatteryPercentInside = Key<Bool>("showBatteryPercentInside", default: true)
+    static let showMinimalisticBatteryIndicator = Key<Bool>("showMinimalisticBatteryIndicator", default: true)
     static let showPowerStatusIcons = Key<Bool>("showPowerStatusIcons", default: true)
     static let playLowBatteryAlertSound = Key<Bool>("playLowBatteryAlertSound", default: true)
     static let showChargingBatteryHUD = Key<Bool>("showChargingBatteryHUD", default: true)
@@ -1079,9 +1113,14 @@ extension Defaults.Keys {
     static let showBluetoothBatteryPercentageText = Key<Bool>("showBluetoothBatteryPercentageText", default: false)
     static let showBluetoothDeviceNameMarquee = Key<Bool>("showBluetoothDeviceNameMarquee", default: false)
     static let useBluetoothHUD3DIcon = Key<Bool>("useBluetoothHUD3DIcon", default: true)
-
+    static let showAirPodsListeningModeChanges = Key<Bool>("showAirPodsListeningModeChanges", default: true)
+    
     // MARK: Stats Feature
     static let enableStatsFeature = Key<Bool>("enableStatsFeature", default: false)
+    static let enableLLMUsageFeature = Key<Bool>("enableLLMUsageFeature", default: false)
+    static let enableClaudeProvider = Key<Bool>("enableClaudeProvider", default: true)
+    static let enableCodexProvider = Key<Bool>("enableCodexProvider", default: true)
+    static let enableCursorProvider = Key<Bool>("enableCursorProvider", default: true)
     static let autoStartStatsMonitoring = Key<Bool>("autoStartStatsMonitoring", default: true)
     static let statsStopWhenNotchCloses = Key<Bool>("statsStopWhenNotchCloses", default: true)
     static let statsUpdateInterval = Key<Double>("statsUpdateInterval", default: 1.0)

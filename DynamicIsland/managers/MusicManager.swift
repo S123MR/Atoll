@@ -491,6 +491,7 @@ class MusicManager: ObservableObject {
 
     @Published var animations: DynamicIslandAnimations = .init()
     @Published var avgColor: NSColor = .white
+    @Published var secondaryColor: NSColor = .gray
     @Published var bundleIdentifier: String? = nil
     @Published var songDuration: TimeInterval = 0
     @Published var elapsedTime: TimeInterval = 0
@@ -681,6 +682,8 @@ class MusicManager: ObservableObject {
             newController = YouTubeMusicController()
         case .amazonMusic:
             newController = AmazonMusicController()
+        case .cider:
+            newController = CiderController()
         }
 
         // Set up state observation for the new controller
@@ -782,6 +785,18 @@ class MusicManager: ObservableObject {
             self.videoArtworkURL = state.liveArtworkURL
         }
 
+        if state.title != self.songTitle {
+            self.songTitle = state.title
+        }
+
+        if state.artist != self.artistName {
+            self.artistName = state.artist
+        }
+
+        if state.album != self.album {
+            self.album = state.album
+        }
+
         // Handle artwork and visual transitions for changed content
         let shouldAutoPeekOnTrackChange = Defaults[.showSneakPeekOnTrackChange]
 
@@ -830,18 +845,6 @@ class MusicManager: ObservableObject {
         let playbackRateChanged = state.playbackRate != self.playbackRate
         let shuffleChanged = state.isShuffled != self.isShuffled
         let repeatModeChanged = state.repeatMode != self.repeatMode
-
-        if state.title != self.songTitle {
-            self.songTitle = state.title
-        }
-
-        if state.artist != self.artistName {
-            self.artistName = state.artist
-        }
-
-        if state.album != self.album {
-            self.album = state.album
-        }
 
         if timeChanged {
             self.elapsedTime = state.currentTime
@@ -1137,10 +1140,11 @@ class MusicManager: ObservableObject {
     }
 
     func calculateAverageColor() {
-        albumArt.averageColor { [weak self] color in
+        albumArt.prominentOpposingColors { [weak self] primary, secondary in
             DispatchQueue.main.async {
                 withAnimation(.smooth) {
-                    self?.avgColor = color ?? .white
+                    self?.avgColor = primary
+                    self?.secondaryColor = secondary
                 }
             }
         }
@@ -1724,6 +1728,8 @@ extension MusicManager {
             return spotifyGreen
         case .amazonMusic:
             return amazonOrange
+        case .cider:
+            return .accentColor
         case .nowPlaying:
             if let bundleIdentifier,
                let bundleColor = brandAccentColor(forBundleIdentifier: bundleIdentifier) {
@@ -1743,6 +1749,8 @@ extension MusicManager {
             return spotifyGreen
         case AmazonMusicController.bundleIdentifier:
             return amazonOrange
+        case CiderController.bundleIdentifier:
+            return .accentColor
         default:
             return nil
         }
