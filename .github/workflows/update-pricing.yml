@@ -11,6 +11,7 @@ permissions:
 jobs:
   update-pricing:
     runs-on: ubuntu-latest
+    if: github.repository == 'Ebullioscopic/Atoll'
 
     steps:
       - name: Generate GitHub App token
