@@ -37,7 +37,6 @@ class LockScreenLiveActivityWindowManager {
     private var screenChangeObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var currentNotchSize: CGSize?
-    private var siriVisibilityCancellables = Set<AnyCancellable>()
 
     /// Whether the target screen uses Dynamic Island (pill) mode.
     private var isDynamicIslandMode: Bool {
@@ -104,9 +103,7 @@ class LockScreenLiveActivityWindowManager {
         self.window = window
         self.hasDelegated = false
 
-        // Use the centralized autohide helper
-        siriVisibilityCancellables = Set<AnyCancellable>()
-        SiriVisibilityMonitor.shared.autohide(window, cancellables: &siriVisibilityCancellables)
+        SiriVisibilityMonitor.shared.autohide(window)
 
         return window
     }

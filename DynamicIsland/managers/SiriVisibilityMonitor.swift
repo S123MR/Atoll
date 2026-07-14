@@ -31,6 +31,7 @@ final class SiriVisibilityMonitor: ObservableObject {
     private var isPluggedIn = false
     private var isInLowPowerMode = false
     private var cancellables = Set<AnyCancellable>()
+    private var autohideSubscriptions: [ObjectIdentifier: AnyCancellable] = [:]
 
     private var monitoringTimer: Timer?
     private var disappearanceConfirmations = 0
@@ -242,11 +243,15 @@ final class SiriVisibilityMonitor: ObservableObject {
         static let appleIntelligenceOwnerName = "CampoRemoteService"
     }
 
-    func autohide(_ window: NSWindow?, cancellables: inout Set<AnyCancellable>) {
+    func autohide(_ window: NSWindow?) {
         guard #available(macOS 27, *) else { return }
         guard let window else { return }
 
-        Publishers.CombineLatest($isSiriVisible, LockScreenManager.shared.$isLocked)
+        let key = ObjectIdentifier(window)
+        autohideSubscriptions[key]?.cancel()
+        autohideSubscriptions[key] = nil
+
+        let subscription = Publishers.CombineLatest($isSiriVisible, LockScreenManager.shared.$isLocked)
             .removeDuplicates { $0.0 == $1.0 && $0.1 == $1.1 }
             .receive(on: RunLoop.main)
             .sink { [weak window] isVisible, isLocked in
@@ -263,7 +268,8 @@ final class SiriVisibilityMonitor: ObservableObject {
                     }
                 }
             }
-            .store(in: &cancellables)
+
+        autohideSubscriptions[key] = subscription
     }
 
     deinit {

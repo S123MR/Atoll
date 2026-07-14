@@ -31,7 +31,6 @@ final class LockScreenReminderWidgetPanelManager {
     private var hasDelegated = false
     private var screenChangeObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
-    private var siriCancellables = Set<AnyCancellable>()
 
     var isVisible: Bool {
         window?.isVisible == true
@@ -51,6 +50,7 @@ final class LockScreenReminderWidgetPanelManager {
 
     func hide() {
         guard let window else { return }
+        restoreVisibleAlpha(for: window)
         window.orderOut(nil)
         window.contentView = nil
     }
@@ -69,6 +69,11 @@ final class LockScreenReminderWidgetPanelManager {
         }
     }
 
+    private func restoreVisibleAlpha(for window: NSWindow) {
+        window.contentView?.layer?.removeAllAnimations()
+        window.alphaValue = 1
+    }
+
     private func render(snapshot: LockScreenReminderWidgetSnapshot, makeVisible: Bool) {
         guard let screen = currentScreen() else { return }
         if !makeVisible, window == nil {
@@ -81,6 +86,7 @@ final class LockScreenReminderWidgetPanelManager {
         hostingView.frame = NSRect(origin: .zero, size: fittingSize)
 
         let window = ensureWindow()
+        restoreVisibleAlpha(for: window)
         window.setFrame(frame(for: fittingSize, on: screen), display: true)
         window.contentView = hostingView
 
@@ -118,8 +124,7 @@ final class LockScreenReminderWidgetPanelManager {
             hasDelegated = true
         }
 
-        siriCancellables = Set<AnyCancellable>()
-        SiriVisibilityMonitor.shared.autohide(newWindow, cancellables: &siriCancellables)
+        SiriVisibilityMonitor.shared.autohide(newWindow)
 
         return newWindow
     }

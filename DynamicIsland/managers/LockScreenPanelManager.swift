@@ -45,7 +45,6 @@ class LockScreenPanelManager {
     private var screenChangeObserver: NSObjectProtocol?
     private var workspaceObservers: [NSObjectProtocol] = []
     private var cancellables = Set<AnyCancellable>()
-    private var siriCancellables = Set<AnyCancellable>()
 
     private init() {
         print("[\(timestamp())] LockScreenPanelManager: initialized")
@@ -146,11 +145,11 @@ class LockScreenPanelManager {
             window = newWindow
             hasDelegated = false
 
-            // Apply Siri autohide
-            siriCancellables = Set<AnyCancellable>()
-            SiriVisibilityMonitor.shared.autohide(window, cancellables: &siriCancellables)
+            SiriVisibilityMonitor.shared.autohide(newWindow)
         }
 
+        window.contentView?.layer?.removeAllAnimations()
+        window.alphaValue = 1
         window.setFrame(targetFrame, display: true)
         publishPanelFrame(targetFrame)
         hideTask?.cancel()
