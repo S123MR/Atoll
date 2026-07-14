@@ -93,6 +93,12 @@ final class MediaKeyInterceptor {
     private let systemDefinedEventType = CGEventType(rawValue: NX_SYSDEFINED_EVENT_TYPE)
     private let eventTapLocations: [CGEventTapLocation] = [.cghidEventTap, .cgSessionEventTap]
 
+    private var shouldEnableTap: Bool {
+        configuration.interceptVolume
+            || configuration.interceptBrightness
+            || configuration.interceptCommandModifiedBrightness
+    }
+
     private init() {}
 
     @discardableResult
@@ -168,7 +174,7 @@ final class MediaKeyInterceptor {
 
     private func updateTapState() {
         guard let tap = eventTap else { return }
-        let shouldEnable = configuration.interceptVolume || configuration.interceptBrightness || configuration.interceptCommandModifiedBrightness
+        let shouldEnable = shouldEnableTap
         if shouldEnable != isTapEnabled {
             CGEvent.tapEnable(tap: tap, enable: shouldEnable)
             isTapEnabled = shouldEnable
@@ -176,6 +182,19 @@ final class MediaKeyInterceptor {
     }
 
     private func handleEvent(cgEvent: CGEvent, type: CGEventType) -> Unmanaged<CGEvent>? {
+        if type == .tapDisabledByTimeout || type == .tapDisabledByUserInput {
+            if shouldEnableTap, let eventTap {
+                CGEvent.tapEnable(tap: eventTap, enable: true)
+                isTapEnabled = true
+                SystemOSDManager.suppressNativeOSDNow()
+                NSLog(
+                    "Media key event tap was disabled by %@; re-enabled",
+                    type == .tapDisabledByTimeout ? "timeout" : "user input"
+                )
+            }
+            return Unmanaged.passUnretained(cgEvent)
+        }
+
         guard let systemDefinedType = systemDefinedEventType,
               type == systemDefinedType,
               let nsEvent = NSEvent(cgEvent: cgEvent),
@@ -202,26 +221,72 @@ final class MediaKeyInterceptor {
         switch Int32(keyCode) {
         case NX_KEYTYPE_SOUND_UP:
             guard configuration.interceptVolume else { return Unmanaged.passUnretained(cgEvent) }
-            delegate?.mediaKeyInterceptor(self, didReceiveVolumeCommand: .up, step: step, isRepeat: isRepeat, modifiers: modifiers)
+            dispatchVolumeCommand(.up, step: step, isRepeat: isRepeat, modifiers: modifiers)
             return nil
         case NX_KEYTYPE_SOUND_DOWN:
             guard configuration.interceptVolume else { return Unmanaged.passUnretained(cgEvent) }
-            delegate?.mediaKeyInterceptor(self, didReceiveVolumeCommand: .down, step: step, isRepeat: isRepeat, modifiers: modifiers)
+            dispatchVolumeCommand(.down, step: step, isRepeat: isRepeat, modifiers: modifiers)
             return nil
         case NX_KEYTYPE_MUTE:
             guard configuration.interceptVolume else { return Unmanaged.passUnretained(cgEvent) }
-            delegate?.mediaKeyInterceptorDidToggleMute(self)
+            dispatchMuteCommand()
             return nil
         case NX_KEYTYPE_BRIGHTNESS_UP:
             guard shouldHandleBrightness(modifiers: modifiers) else { return Unmanaged.passUnretained(cgEvent) }
-            delegate?.mediaKeyInterceptor(self, didReceiveBrightnessCommand: .up, step: step, isRepeat: isRepeat, modifiers: modifiers)
+            dispatchBrightnessCommand(.up, step: step, isRepeat: isRepeat, modifiers: modifiers)
             return nil
         case NX_KEYTYPE_BRIGHTNESS_DOWN:
             guard shouldHandleBrightness(modifiers: modifiers) else { return Unmanaged.passUnretained(cgEvent) }
-            delegate?.mediaKeyInterceptor(self, didReceiveBrightnessCommand: .down, step: step, isRepeat: isRepeat, modifiers: modifiers)
+            dispatchBrightnessCommand(.down, step: step, isRepeat: isRepeat, modifiers: modifiers)
             return nil
         default:
             return Unmanaged.passUnretained(cgEvent)
+        }
+    }
+
+    /// Keep all potentially blocking CoreAudio/CoreBrightness work outside the
+    /// event-tap callback. A tap callback must return promptly or macOS disables
+    /// it and the next media key falls through to the native OSD.
+    private func dispatchVolumeCommand(
+        _ direction: MediaKeyDirection,
+        step: MediaKeyStep,
+        isRepeat: Bool,
+        modifiers: NSEvent.ModifierFlags
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.mediaKeyInterceptor(
+                self,
+                didReceiveVolumeCommand: direction,
+                step: step,
+                isRepeat: isRepeat,
+                modifiers: modifiers
+            )
+        }
+    }
+
+    private func dispatchBrightnessCommand(
+        _ direction: MediaKeyDirection,
+        step: MediaKeyStep,
+        isRepeat: Bool,
+        modifiers: NSEvent.ModifierFlags
+    ) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.mediaKeyInterceptor(
+                self,
+                didReceiveBrightnessCommand: direction,
+                step: step,
+                isRepeat: isRepeat,
+                modifiers: modifiers
+            )
+        }
+    }
+
+    private func dispatchMuteCommand() {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.delegate?.mediaKeyInterceptorDidToggleMute(self)
         }
     }
 

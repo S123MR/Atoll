@@ -155,6 +155,7 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         modifiers: NSEvent.ModifierFlags
     ) {
         guard volumeEnabled else { return }
+        SystemOSDManager.suppressNativeOSDNow()
         
         // Elastic Limit Detection (Vertical HUD)
         if Defaults[.enableVerticalHUD] {
@@ -174,6 +175,7 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
 
     func mediaKeyInterceptorDidToggleMute(_ interceptor: MediaKeyInterceptor) {
         guard volumeEnabled else { return }
+        SystemOSDManager.suppressNativeOSDNow()
         volumeController.toggleMute()
     }
 
@@ -184,21 +186,34 @@ final class SystemChangesObserver: MediaKeyInterceptorDelegate {
         isRepeat: Bool,
         modifiers: NSEvent.ModifierFlags
     ) {
+        let isBacklight = modifiers.contains(.command) && keyboardBacklightEnabled
+        guard isBacklight || brightnessEnabled else { return }
+        SystemOSDManager.suppressNativeOSDNow()
+
         // Elastic Limit Detection (Vertical HUD)
         if Defaults[.enableVerticalHUD] {
-            let brightness = brightnessController.currentBrightness
-            if direction == .up && brightness >= 0.99 {
-                Task { @MainActor in VerticalHUDWindowManager.shared.triggerBump(direction: 1) }
-            } else if direction == .down && brightness <= 0.01 {
-                Task { @MainActor in VerticalHUDWindowManager.shared.triggerBump(direction: -1) }
+            if isBacklight {
+                let brightness = keyboardBacklightController.currentLevel
+                if direction == .up && brightness >= 0.99 {
+                    Task { @MainActor in VerticalHUDWindowManager.shared.triggerBump(direction: 1) }
+                } else if direction == .down && brightness <= 0.01 {
+                    Task { @MainActor in VerticalHUDWindowManager.shared.triggerBump(direction: -1) }
+                }
+            } else {
+                let brightness = brightnessController.currentBrightness
+                if direction == .up && brightness >= 0.99 {
+                    Task { @MainActor in VerticalHUDWindowManager.shared.triggerBump(direction: 1) }
+                } else if direction == .down && brightness <= 0.01 {
+                    Task { @MainActor in VerticalHUDWindowManager.shared.triggerBump(direction: -1) }
+                }
             }
         }
         
         let baseStep = brightnessStep(for: step)
         let delta = direction == .up ? baseStep : -baseStep
-        if modifiers.contains(.command) && keyboardBacklightEnabled {
+        if isBacklight {
             keyboardBacklightController.adjust(by: delta)
-        } else if brightnessEnabled {
+        } else {
             brightnessController.adjust(by: delta)
         }
     }
@@ -416,5 +431,3 @@ private final class VolumeFeedbackPlayer {
         }
     }
 }
-
-
