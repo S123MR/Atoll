@@ -1,4 +1,4 @@
-<p align="center">
+ <p align="center">
   <img src=".github/assets/atoll-logo.png" alt="Atoll logo" width="120">
 </p>
 <h1 align="center">Atoll - DynamicIsland for macOS</h1>
